@@ -14,5 +14,3 @@ services:
       - RPC_ENABLED=${RPC_ENABLED:-true}
       - RECAPTCHA_SITE_KEY=${RECAPTCHA_SITE_KEY:-}
       - SINGLE_TENANT_MODE=${SINGLE_TENANT_MODE:-true}
-    volumes:
-      - ./env-config-${NETWORK_TYPE:-testnet}.js:/usr/share/nginx/html/settings/env-config.js:ro
