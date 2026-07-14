@@ -1,8 +1,18 @@
 version: '3.8'
 services:
   sdp-frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
     image: stellar/stellar-disbursement-platform-frontend:edge
     ports:
       - "3000:80"
+    environment:
+      - API_URL=${BASE_URL:-http://localhost:8000}
+      - STELLAR_EXPERT_URL=${STELLAR_EXPERT_URL:-https://stellar.expert/explorer/testnet}
+      - HORIZON_URL=${HORIZON_URL:-https://horizon-testnet.stellar.org}
+      - RPC_ENABLED=${RPC_ENABLED:-true}
+      - RECAPTCHA_SITE_KEY=${RECAPTCHA_SITE_KEY:-}
+      - SINGLE_TENANT_MODE=${SINGLE_TENANT_MODE:-true}
     volumes:
-      - ./env-config-${NETWORK_TYPE:-testnet}.js:/usr/share/nginx/html/settings/env-config.js
+      - ./env-config-${NETWORK_TYPE:-testnet}.js:/usr/share/nginx/html/settings/env-config.js:ro

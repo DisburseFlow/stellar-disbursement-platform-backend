@@ -11,6 +11,8 @@ services:
     depends_on:
       db:
         condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
   sdp-tss:
     extends:
       file: docker-compose-tss.yml
@@ -18,6 +20,8 @@ services:
     depends_on:
       - db
       - sdp-api
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
   sdp-frontend:
     extends:
       file: docker-compose-frontend.yml
@@ -25,11 +29,14 @@ services:
     depends_on:
       - db
       - sdp-api
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
   demo-wallet:
     extends:
       file: docker-compose-sdp.yml
       service: demo-wallet
+
 volumes:
   postgres-db:
-    name: ${COMPOSE_PROJECT_NAME}_postgres-db
+    name: ${COMPOSE_PROJECT_NAME:-sdp}_postgres-db-${NETWORK_TYPE:-testnet}
     driver: local
