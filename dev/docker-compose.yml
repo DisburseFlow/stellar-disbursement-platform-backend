@@ -10,7 +10,7 @@ services:
       service: sdp-api
     depends_on:
       db:
-        condition: service_started
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
   sdp-tss:
@@ -18,8 +18,10 @@ services:
       file: docker-compose-tss.yml
       service: sdp-tss
     depends_on:
-      - db
-      - sdp-api
+      db:
+        condition: service_healthy
+      sdp-api:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
   sdp-frontend:

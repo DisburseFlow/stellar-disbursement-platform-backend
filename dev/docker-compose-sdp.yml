@@ -10,6 +10,12 @@ services:
       - "5432:5432"
     volumes:
       - postgres-db:/data/postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${DATABASE_NAME:-sdp_mtn}"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
   sdp-api:
     image: stellar/sdp-v2:development
     build:
@@ -20,6 +26,15 @@ services:
       - "${METRICS_PORT:-8002}:${METRICS_PORT:-8002}"
       - "${ADMIN_PORT:-8003}:${ADMIN_PORT:-8003}"
       - "2345:2345"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8000/app-config || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
     environment:
       BASE_URL: ${BASE_URL:-http://localhost:8000}
       SDP_UI_BASE_URL: ${SDP_UI_BASE_URL:-http://localhost:3000}

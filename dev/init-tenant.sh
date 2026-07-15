@@ -10,8 +10,8 @@ echo "=========================================="
 echo "  Initializing tenant and admin user"
 echo "=========================================="
 
-# Run migrations and tenant setup - use host.docker.internal for DB access from container
-docker compose -p "$PROJECT_NAME" --env-file .env exec -T "$CONTAINER_NAME" sh -c "
+# Run migrations and tenant setup - capture output to get tenant ID
+OUTPUT=$(docker compose -p "$PROJECT_NAME" --env-file .env exec -T "$CONTAINER_NAME" sh -c "
   ./stellar-disbursement-platform db admin migrate up &&
   ./stellar-disbursement-platform db tss migrate up &&
   ./stellar-disbursement-platform db auth migrate up --all &&
@@ -32,17 +32,21 @@ docker compose -p "$PROJECT_NAME" --env-file .env exec -T "$CONTAINER_NAME" sh -
     --channel-account-encryption-passphrase \"\$DISTRIBUTION_SEED\" \
     --disable-mfa \"\$DISABLE_MFA\" \
     --disable-recaptcha \"\$DISABLE_RECAPTCHA\"
-"
+" 2>&1)
 
-echo "Tenant initialized successfully!"
+echo "$OUTPUT"
 
-# Get tenant ID and create admin user
-echo "Creating admin user..."
-TENANT_ID=$(docker compose -p "$PROJECT_NAME" --env-file .env exec -T "$CONTAINER_NAME" sh -c "
-  ./stellar-disbursement-platform tenants list --database-url \"postgres://postgres@host.docker.internal:5432/sdp_mtn?sslmode=disable\" 2>/dev/null | grep default | awk '{print \$1}'
-")
+# Extract tenant ID from output (format: "Default tenant exists: default (tenant-id)")
+TENANT_ID=$(echo "$OUTPUT" | grep -oE 'Default tenant exists: default \([a-f0-9-]+\)' | sed -E 's/Default tenant exists: default \(([a-f0-9-]+)\)/\1/')
+
+if [ -z "$TENANT_ID" ]; then
+  # Try alternative format
+  TENANT_ID=$(echo "$OUTPUT" | grep -oE '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' | head -1)
+fi
 
 if [ -n "$TENANT_ID" ]; then
+  echo "Found tenant ID: $TENANT_ID"
+  echo "Creating admin user..."
   echo "Password123!" | docker compose -p "$PROJECT_NAME" --env-file .env exec -T "$CONTAINER_NAME" sh -c "
     ./stellar-disbursement-platform auth add-user owner@default.local Default Owner \
       --password \
@@ -52,7 +56,8 @@ if [ -n "$TENANT_ID" ]; then
       --database-url \"postgres://postgres@host.docker.internal:5432/sdp_mtn?sslmode=disable\"
   " && echo "Admin user created!" || echo "Admin user may already exist, continuing..."
 else
-  echo "Warning: Could not find default tenant ID, skipping admin user creation"
+  echo "Warning: Could not find default tenant ID from output, skipping admin user creation"
+  echo "Output was: $OUTPUT"
 fi
 
 echo "=========================================="
