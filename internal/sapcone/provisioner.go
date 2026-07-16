@@ -196,3 +196,61 @@ func (s *ProvisionerService) createAccount(ctx context.Context, wallet *Particip
 		wallet.ID, result.Hash, destination)
 	return ProvisioningResult{AccountCreatedTxHash: result.Hash}, nil
 }
+
+// establishTrustline loads the new account, builds and submits a ChangeTrust
+// transaction signed by the new account's own key.
+func (s *ProvisionerService) establishTrustline(ctx context.Context, wallet *ParticipantWallet, kp *keypair.Full, asset ProvisioningAsset, createTxHash string) (ProvisioningResult, error) {
+	log.Ctx(ctx).Debugf("sapcone/provisioner: wallet=%s loading new account=%s for ChangeTrust sequence",
+		wallet.ID, kp.Address())
+	newAccount, err := s.stellar.LoadAccount(ctx, kp.Address())
+	if err != nil {
+		log.Ctx(ctx).Errorf("sapcone/provisioner: wallet=%s failed to load new account for trustline: %v", wallet.ID, err)
+		s.markFailed(ctx, wallet.ID, ProvisioningFailureReasonTrustlineEstablishFailed)
+		return ProvisioningResult{
+			WalletID:             wallet.ID,
+			StellarAddress:       kp.Address(),
+			AccountCreatedTxHash: createTxHash,
+			FailureReason:        ProvisioningFailureReasonTrustlineEstablishFailed,
+		}, fmt.Errorf("loading new account for trustline: %w", err)
+	}
+
+	log.Ctx(ctx).Infof("sapcone/provisioner: wallet=%s submitting ChangeTrust: account=%s asset=%s/%s",
+		wallet.ID, kp.Address(), asset.Code, asset.Issuer)
+
+	tx, err := txnbuild.NewTransaction(txnbuild.TransactionParams{
+		SourceAccount:        &txnbuild.SimpleAccount{AccountID: kp.Address(), Sequence: newAccount.SequenceNumber},
+		IncrementSequenceNum: true,
+		Operations: []txnbuild.Operation{
+			&txnbuild.ChangeTrust{
+				Line: txnbuild.ChangeTrustAssetWrapper{
+					Asset: txnbuild.CreditAsset{Code: asset.Code, Issuer: asset.Issuer},
+				},
+			},
+		},
+		BaseFee:       txnbuild.MinBaseFee,
+		Preconditions: txnbuild.Preconditions{TimeBounds: txnbuild.NewTimeout(300)},
+	})
+	if err != nil {
+		log.Ctx(ctx).Errorf("sapcone/provisioner: wallet=%s failed to build ChangeTrust tx: %v", wallet.ID, err)
+		return ProvisioningResult{}, fmt.Errorf("building ChangeTrust transaction: %w", err)
+	}
+
+	result, err := s.stellar.SubmitTransaction(ctx, tx, kp.Seed())
+	if err != nil || !result.Successful {
+		log.Ctx(ctx).Errorf("sapcone/provisioner: wallet=%s ChangeTrust FAILED: successful=%v err=%v",
+			wallet.ID, result.Successful, err)
+		s.markFailed(ctx, wallet.ID, ProvisioningFailureReasonTrustlineEstablishFailed)
+		return ProvisioningResult{
+			WalletID:             wallet.ID,
+			StellarAddress:       kp.Address(),
+			AccountCreatedTxHash: createTxHash,
+			FailureReason:        ProvisioningFailureReasonTrustlineEstablishFailed,
+		}, fmt.Errorf("ChangeTrust submission failed: %w", err)
+	}
+
+	log.Ctx(ctx).Infof("sapcone/provisioner: wallet=%s ChangeTrust SUCCESS txHash=%s", wallet.ID, result.Hash)
+	return ProvisioningResult{
+		AccountCreatedTxHash:   createTxHash,
+		TrustlineCreatedTxHash: result.Hash,
+	}, nil
+}
