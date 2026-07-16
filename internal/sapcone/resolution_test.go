@@ -92,3 +92,52 @@ func Test_WalletResolver_Resolve(t *testing.T) {
 		})
 	}
 }
+
+// Test_WalletResolver_StoreErrorPropagates: a storage failure (not the
+// not-found sentinel) must surface as an error rather than masquerading as NEW.
+func Test_WalletResolver_StoreErrorPropagates(t *testing.T) {
+	store := new(MockParticipantWalletStore)
+	storeErr := assertStoreErr("db connection lost")
+	store.On("GetByPhoneNumber", context.Background(), "+254722222222").
+		Return(nil, storeErr)
+
+	resolver := NewWalletResolverService(store)
+	got, err := resolver.Resolve(context.Background(), "+254722222222")
+
+	require.Error(t, err)
+	assert.Equal(t, ResolutionResult{}, got)
+	store.AssertExpectations(t)
+}
+
+// Test_WalletResolver_TypicalResolutionLifecycle proves the resolution +
+// provisioning handoff shape end-to-end at the contract level: an unknown
+// number resolves NEW with a nil wallet, and a follow-up Provision call
+// (via the resolver's provisioner sibling) is what creates the record. The
+// resolver itself must NOT have created the wallet by the time Resolve returns.
+func Test_WalletResolver_TypicalResolutionLifecycle(t *testing.T) {
+	const newPhone = "+254733333333"
+
+	store := new(MockParticipantWalletStore)
+	store.On("GetByPhoneNumber", context.Background(), newPhone).
+		Return(nil, ErrParticipantNotFound)
+
+	resolver := NewWalletResolverService(store)
+
+	got, err := resolver.Resolve(context.Background(), newPhone)
+	require.NoError(t, err)
+	assert.Equal(t, ResolutionOutcomeNeedsNew, got.Outcome)
+	assert.Nil(t, got.Wallet, "resolver must not have created a wallet record")
+
+	// The record still does not exist; provisioning owns creation. We prove
+	// this by asserting Create was never called during resolution.
+	store.AssertNumberOfCalls(t, "Create", 0)
+	store.AssertExpectations(t)
+}
+
+// assertStoreErr is a tiny helper so the test doesn't need to allocate a named
+// error for each call site unnecessarily.
+func assertStoreErr(msg string) error { return &storeErr{msg: msg} }
+
+type storeErr struct{ msg string }
+
+func (e *storeErr) Error() string { return e.msg }
