@@ -254,3 +254,38 @@ func (s *ProvisionerService) establishTrustline(ctx context.Context, wallet *Par
 		TrustlineCreatedTxHash: result.Hash,
 	}, nil
 }
+
+// checkTreasuryBalance returns ErrInsufficientTreasuryBalance (and marks the
+// wallet Failed) if the treasury's XLM balance is below StartingBalance.
+func (s *ProvisionerService) checkTreasuryBalance(ctx context.Context, walletID string, nativeBalance string) error {
+	treasuryBalance, err := decimal.NewFromString(nativeBalance)
+	if err != nil {
+		return fmt.Errorf("parsing treasury balance %q: %w", nativeBalance, err)
+	}
+	startingBalance, err := decimal.NewFromString(s.opts.StartingBalance)
+	if err != nil {
+		return fmt.Errorf("parsing starting balance %q: %w", s.opts.StartingBalance, err)
+	}
+
+	log.Ctx(context.Background()).Debugf("sapcone/provisioner: wallet=%s treasury balance=%s required=%s",
+		walletID, treasuryBalance.String(), startingBalance.String())
+
+	if treasuryBalance.LessThan(startingBalance) {
+		log.Ctx(context.Background()).Errorf(
+			"sapcone/provisioner: wallet=%s INSUFFICIENT treasury balance=%s < required=%s",
+			walletID, treasuryBalance.String(), startingBalance.String())
+		s.markFailed(context.Background(), walletID, ProvisioningFailureReasonInsufficientTreasury)
+		return ErrInsufficientTreasuryBalance
+	}
+	return nil
+}
+
+// markFailed is a best-effort helper that records a Failed status in the store.
+// Errors from the store are logged but not propagated — the caller's primary
+// error takes precedence.
+func (s *ProvisionerService) markFailed(ctx context.Context, walletID string, reason ProvisioningFailureReason) {
+	if err := s.store.UpdateStatus(ctx, walletID, ParticipantWalletStatusFailed, reason); err != nil {
+		log.Ctx(ctx).Errorf("sapcone/provisioner: wallet=%s failed to persist FAILED status (reason=%s): %v",
+			walletID, reason, err)
+	}
+}
