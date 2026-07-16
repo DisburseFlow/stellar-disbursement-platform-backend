@@ -660,12 +660,12 @@ func CreateInstructionsFixture(t *testing.T, instructions []*DisbursementInstruc
 	writer := csv.NewWriter(&buf)
 
 	// write header
-	outerErr := writer.Write([]string{"phone", "id", "amount", "verification_value"})
+	outerErr := writer.Write([]string{"phone", "name", "idno", "amount"})
 	require.NoError(t, outerErr)
 
 	// write instructions
 	for _, instruction := range instructions {
-		record := []string{instruction.Phone, instruction.ID, instruction.Amount, instruction.VerificationValue}
+		record := []string{instruction.Phone, instruction.Name, instruction.IDNo, instruction.Amount}
 		err := writer.Write(record)
 		require.NoError(t, err)
 	}

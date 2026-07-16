@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lib/pq"
 
 	"github.com/stellar/stellar-disbursement-platform-backend/db"
@@ -25,6 +26,8 @@ type Receiver struct {
 	Email       string     `json:"email,omitempty" db:"email"`
 	PhoneNumber string     `json:"phone_number,omitempty" db:"phone_number"`
 	ExternalID  string     `json:"external_id,omitempty" db:"external_id"`
+	Name        string     `json:"name,omitempty" db:"name"`
+	IDNo        string     `json:"id_no,omitempty" db:"id_no"`
 	CreatedAt   *time.Time `json:"created_at,omitempty" db:"created_at"`
 	UpdatedAt   *time.Time `json:"updated_at,omitempty" db:"updated_at"`
 	ReceiverStats
@@ -68,6 +71,8 @@ func ReceiverColumnNames(tableReference, resultAlias string) string {
 		RawColumns: []string{
 			"id",
 			"external_id",
+			"name",
+			"id_no",
 			"created_at",
 			"updated_at",
 		},
@@ -109,6 +114,8 @@ type ReceiverInsert struct {
 	PhoneNumber *string `db:"phone_number"`
 	Email       *string `db:"email"`
 	ExternalID  *string `db:"external_id"`
+	Name        *string `db:"name"`
+	IDNo        *string `db:"id_no"`
 }
 
 type ReceiverUpdate ReceiverInsert
@@ -307,20 +314,31 @@ func (r *ReceiverModel) ParseReceiverIDs(receivers []Receiver) ReceiverIDs {
 
 // Insert inserts a new receiver into the database.
 func (r *ReceiverModel) Insert(ctx context.Context, sqlExec db.SQLExecuter, insert ReceiverInsert) (*Receiver, error) {
+	// Generate external_id if not provided
+	externalID := insert.ExternalID
+	if externalID == nil {
+		newExternalID := uuid.New().String()
+		externalID = &newExternalID
+	}
+
 	query := `
 		INSERT INTO receivers (
 			phone_number,
 			email,
-			external_id
+			external_id,
+			name,
+			id_no
 		) VALUES (
 			$1,
 			$2,
-		    $3
+			$3,
+			$4,
+			$5
 		) RETURNING
 			` + ReceiverColumnNames("", "")
 
 	var receiver Receiver
-	err := sqlExec.GetContext(ctx, &receiver, query, insert.PhoneNumber, insert.Email, insert.ExternalID)
+	err := sqlExec.GetContext(ctx, &receiver, query, insert.PhoneNumber, insert.Email, externalID, insert.Name, insert.IDNo)
 	if err != nil {
 		var pqError *pq.Error
 		if errors.As(err, &pqError) && pqError.Code == "23505" {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/stellar/go-stellar-sdk/support/log"
 	"golang.org/x/exp/maps"
@@ -16,12 +17,11 @@ import (
 type DisbursementInstruction struct {
 	Phone             string `csv:"phone"`
 	Email             string `csv:"email"`
-	ID                string `csv:"id"`
-	Amount            string `csv:"amount"`
-	VerificationValue string `csv:"verification"`
-	ExternalPaymentID string `csv:"paymentID"`
+	Name              string `csv:"name"`
 	WalletAddress     string `csv:"walletAddress"`
 	WalletAddressMemo string `csv:"walletAddressMemo"`
+	IDNo              string `csv:"idno"`
+	Amount            string `csv:"amount"`
 }
 
 func (di *DisbursementInstruction) Contact() (string, error) {
@@ -161,7 +161,8 @@ func (di DisbursementInstructionModel) registerSuppliedWallets(ctx context.Conte
 	for _, instruction := range instructions {
 		receiver := findReceiverByInstruction(receiversByIDMap, instruction)
 		if receiver == nil {
-			return fmt.Errorf("receiver not found for instruction with ID %s", instruction.ID)
+			contact, _ := instruction.Contact()
+			return fmt.Errorf("receiver not found for instruction with contact %s", contact)
 		}
 		receiverWalletID, exists := receiverIDToReceiverWalletIDMap[receiver.ID]
 		if !exists {
@@ -219,7 +220,7 @@ func (di DisbursementInstructionModel) reconcileExistingReceiversWithInstruction
 	for _, instruction := range instructions {
 		contact, err := instruction.Contact()
 		if err != nil {
-			return nil, fmt.Errorf("resolving contact information for instruction with ID %s: %w", instruction.ID, err)
+			return nil, fmt.Errorf("resolving contact information: %w", err)
 		}
 		contacts = append(contacts, contact)
 	}
@@ -268,7 +269,7 @@ func (di DisbursementInstructionModel) reconcileExistingReceiversWithInstruction
 func (di DisbursementInstructionModel) createReceiverFromInstructionIfNeeded(ctx context.Context, dbTx db.DBTransaction, instruction *DisbursementInstruction, existingReceiversByContactMap map[string]*Receiver) error {
 	contact, err := instruction.Contact()
 	if err != nil {
-		return fmt.Errorf("resolving contact information for instruction with ID %s: %w", instruction.ID, err)
+		return fmt.Errorf("resolving contact information: %w", err)
 	}
 
 	_, exists := existingReceiversByContactMap[contact]
@@ -280,8 +281,11 @@ func (di DisbursementInstructionModel) createReceiverFromInstructionIfNeeded(ctx
 		if instruction.Email != "" {
 			receiverInsert.Email = &instruction.Email
 		}
-		if instruction.ID != "" {
-			receiverInsert.ExternalID = &instruction.ID
+		if instruction.Name != "" {
+			receiverInsert.Name = &instruction.Name
+		}
+		if instruction.IDNo != "" {
+			receiverInsert.IDNo = &instruction.IDNo
 		}
 		_, insertErr := di.receiverModel.Insert(ctx, dbTx, receiverInsert)
 		if insertErr != nil {
@@ -309,7 +313,7 @@ func (di DisbursementInstructionModel) processReceiverVerifications(ctx context.
 	for _, instruction := range instructions {
 		contact, err := instruction.Contact()
 		if err != nil {
-			return fmt.Errorf("resolving contact information for instruction with ID %s: %w", instruction.ID, err)
+			return fmt.Errorf("resolving contact information: %w", err)
 		}
 		instructionsByContactMap[contact] = instruction
 	}
@@ -325,21 +329,24 @@ func (di DisbursementInstructionModel) processReceiverVerifications(ctx context.
 		}
 		verification, exists := verificationByReceiverIDMap[receiver.ID]
 
+		// For NATIONAL_ID_NUMBER verification type, use instruction.IDNo as the verification value
+		verificationValue := instruction.IDNo
+
 		if !exists {
 			verificationInsert := ReceiverVerificationInsert{
 				ReceiverID:        receiver.ID,
-				VerificationValue: instruction.VerificationValue,
+				VerificationValue: verificationValue,
 				VerificationField: disbursement.VerificationField,
 			}
 			_, insertErr := di.receiverVerificationModel.Insert(ctx, dbTx, verificationInsert)
 			if insertErr != nil {
 				return fmt.Errorf("error inserting receiver verification: %w", insertErr)
 			}
-		} else if !CompareVerificationValue(verification.HashedValue, instruction.VerificationValue) {
+		} else if !CompareVerificationValue(verification.HashedValue, verificationValue) {
 			if verification.ConfirmedAt != nil {
-				return fmt.Errorf("%w: receiver verification for %s doesn't match. Check instruction with ID %s", ErrReceiverVerificationMismatch, contact, instruction.ID)
+				return fmt.Errorf("%w: receiver verification for %s doesn't match", ErrReceiverVerificationMismatch, contact)
 			}
-			updateErr := di.receiverVerificationModel.UpdateVerificationValue(ctx, dbTx, verification.ReceiverID, verification.VerificationField, instruction.VerificationValue)
+			updateErr := di.receiverVerificationModel.UpdateVerificationValue(ctx, dbTx, verification.ReceiverID, verification.VerificationField, verificationValue)
 			if updateErr != nil {
 				return fmt.Errorf("error updating receiver verification for disbursement id %s: %w", disbursement.ID, updateErr)
 			}
@@ -392,18 +399,23 @@ func (di DisbursementInstructionModel) createPayments(ctx context.Context, dbTx 
 	for _, instruction := range instructions {
 		receiver := findReceiverByInstruction(receiverMap, instruction)
 		if receiver == nil {
-			return fmt.Errorf("receiver not found for instruction with ID %s", instruction.ID)
+			contact, _ := instruction.Contact()
+			return fmt.Errorf("receiver not found for instruction with contact %s", contact)
 		}
+		// Generate ExternalPaymentID: sap + YYYYMMDDHHMMSSmmm (replace dots)
+		now := time.Now()
+		externalPaymentID := fmt.Sprintf("sap%04d%02d%02d%02d%02d%02d%03d",
+			now.Year(), now.Month(), now.Day(),
+			now.Hour(), now.Minute(), now.Second(),
+			now.Nanosecond()/1_000_000) // milliseconds
 		payment := PaymentInsert{
-			ReceiverID:       receiver.ID,
-			DisbursementID:   &disbursement.ID,
-			Amount:           instruction.Amount,
-			AssetID:          disbursement.Asset.ID,
-			ReceiverWalletID: receiverIDToReceiverWalletIDMap[receiver.ID],
-			PaymentType:      PaymentTypeDisbursement,
-		}
-		if instruction.ExternalPaymentID != "" {
-			payment.ExternalPaymentID = &instruction.ExternalPaymentID
+			ReceiverID:         receiver.ID,
+			DisbursementID:     &disbursement.ID,
+			Amount:             instruction.Amount,
+			AssetID:            disbursement.Asset.ID,
+			ReceiverWalletID:   receiverIDToReceiverWalletIDMap[receiver.ID],
+			PaymentType:        PaymentTypeDisbursement,
+			ExternalPaymentID:  &externalPaymentID,
 		}
 		payments = append(payments, payment)
 	}

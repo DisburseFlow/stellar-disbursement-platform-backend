@@ -35,7 +35,7 @@ var (
 const (
 	VerificationFieldPinMinLength = 4
 	VerificationFieldPinMaxLength = 8
-	VerificationFieldMaxIDLength  = 50
+	VerificationFieldMaxIDLength  = 8
 )
 
 // ValidatePhoneNumber validates a phone number string according to the E.164 standard.
@@ -190,8 +190,8 @@ func ValidateNationalIDVerification(nationalID string) (string, error) {
 		return httperror.Extra_0, fmt.Errorf("national id cannot be empty")
 	}
 
-	if len(nationalID) > VerificationFieldMaxIDLength {
-		return httperror.Extra_6, fmt.Errorf("invalid national id. Cannot have more than %d characters in national id", VerificationFieldMaxIDLength)
+	if len(nationalID) != VerificationFieldMaxIDLength {
+		return httperror.Extra_6, fmt.Errorf("national id must be exactly %d characters", VerificationFieldMaxIDLength)
 	}
 
 	return "", nil

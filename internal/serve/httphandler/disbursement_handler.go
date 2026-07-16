@@ -692,9 +692,11 @@ func validateCSVHeaders(file io.Reader, registrationContactType data.Registratio
 	const (
 		phoneHeader             = "phone"
 		emailHeader             = "email"
+		nameHeader              = "name"
+		idNoHeader              = "idno"
+		amountHeader            = "amount"
 		walletAddressHeader     = "walletAddress"
 		walletAddressMemoHeader = "walletAddressMemo"
-		verificationHeader      = "verification"
 	)
 
 	headers, err := csv.NewReader(utfbom.SkipOnly(file)).Read()
@@ -705,9 +707,11 @@ func validateCSVHeaders(file io.Reader, registrationContactType data.Registratio
 	hasHeaders := map[string]bool{
 		phoneHeader:             false,
 		emailHeader:             false,
+		nameHeader:              false,
+		idNoHeader:              false,
+		amountHeader:            false,
 		walletAddressHeader:     false,
 		walletAddressMemoHeader: false,
-		verificationHeader:      false,
 	}
 
 	// Populate header presence map
@@ -725,36 +729,24 @@ func validateCSVHeaders(file io.Reader, registrationContactType data.Registratio
 
 	rules := map[data.RegistrationContactType]headerRules{
 		data.RegistrationContactTypePhone: {
-			required:   []string{phoneHeader, verificationHeader},
+			required:   []string{phoneHeader, nameHeader, idNoHeader, amountHeader},
 			disallowed: []string{emailHeader, walletAddressHeader, walletAddressMemoHeader},
 		},
 		data.RegistrationContactTypeEmail: {
-			required:   []string{emailHeader, verificationHeader},
+			required:   []string{emailHeader, nameHeader, idNoHeader, amountHeader},
 			disallowed: []string{phoneHeader, walletAddressHeader, walletAddressMemoHeader},
 		},
 		data.RegistrationContactTypeEmailAndWalletAddress: {
-			required:   []string{emailHeader, walletAddressHeader},
-			disallowed: []string{phoneHeader, verificationHeader},
+			required:   []string{emailHeader, walletAddressHeader, nameHeader, idNoHeader, amountHeader},
+			disallowed: []string{phoneHeader},
 		},
 		data.RegistrationContactTypePhoneAndWalletAddress: {
-			required:   []string{phoneHeader, walletAddressHeader},
-			disallowed: []string{emailHeader, verificationHeader},
+			required:   []string{phoneHeader, walletAddressHeader, nameHeader, idNoHeader, amountHeader},
+			disallowed: []string{emailHeader},
 		},
 	}
 
 	rule := rules[registrationContactType]
-	if skipVerification {
-		// filter out the verification header from required headers
-		filtered := rule.required[:0]
-		for _, header := range rule.required {
-			if header != verificationHeader {
-				filtered = append(filtered, header)
-			}
-		}
-		rule.required = filtered
-		// And add it to disallowed
-		rule.disallowed = append(rule.disallowed, verificationHeader)
-	}
 
 	// Validate headers according to the rules
 	for _, req := range rule.required {

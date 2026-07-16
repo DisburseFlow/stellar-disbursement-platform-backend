@@ -18,8 +18,8 @@ type DisbursementInstructionsValidator struct {
 }
 
 const (
-	maxReceiverExternalIDLength = 64
-	maxExternalPaymentIDLength  = 64
+	maxNameLength = 255
+	maxIDNoLength = 8
 )
 
 func NewDisbursementInstructionsValidator(contactType data.RegistrationContactType, verificationField data.VerificationType) *DisbursementInstructionsValidator {
@@ -31,20 +31,14 @@ func NewDisbursementInstructionsValidator(contactType data.RegistrationContactTy
 }
 
 func (iv *DisbursementInstructionsValidator) ValidateInstruction(instruction *data.DisbursementInstruction, lineNumber int) {
-	// 1. Validate required fields
-	iv.Check(instruction.ID != "", fmt.Sprintf("line %d - id", lineNumber), "id cannot be empty")
-	if instruction.ID != "" {
-		iv.CheckError(
-			utils.ValidateStringLength(instruction.ID, "id", maxReceiverExternalIDLength),
-			fmt.Sprintf("line %d - id", lineNumber),
-			"",
-		)
-	}
 	iv.CheckError(utils.ValidateAmount(instruction.Amount), fmt.Sprintf("line %d - amount", lineNumber), "invalid amount. Amount must be a positive number")
-	if instruction.ExternalPaymentID != "" {
+
+	// Validate Name (required, max 255 chars)
+	iv.Check(instruction.Name != "", fmt.Sprintf("line %d - name", lineNumber), "name cannot be empty")
+	if instruction.Name != "" {
 		iv.CheckError(
-			utils.ValidateStringLength(instruction.ExternalPaymentID, "paymentID", maxExternalPaymentIDLength),
-			fmt.Sprintf("line %d - paymentID", lineNumber),
+			utils.ValidateStringLength(instruction.Name, "name", maxNameLength),
+			fmt.Sprintf("line %d - name", lineNumber),
 			"",
 		)
 	}
@@ -79,23 +73,16 @@ func (iv *DisbursementInstructionsValidator) ValidateInstruction(instruction *da
 				}
 			}
 		}
-	} else {
-		// 4. Validate verification field
-		verification := instruction.VerificationValue
-		switch iv.verificationField {
-		case data.VerificationTypeDateOfBirth:
-			_, validationErr := utils.ValidateDateOfBirthVerification(verification)
-			iv.CheckError(validationErr, fmt.Sprintf("line %d - date of birth", lineNumber), "")
-		case data.VerificationTypeYearMonth:
-			_, validationErr := utils.ValidateYearMonthVerification(verification)
-			iv.CheckError(validationErr, fmt.Sprintf("line %d - year/month", lineNumber), "")
-		case data.VerificationTypePin:
-			_, validationErr := utils.ValidatePinVerification(verification)
-			iv.CheckError(validationErr, fmt.Sprintf("line %d - pin", lineNumber), "")
-		case data.VerificationTypeNationalID:
-			_, validationErr := utils.ValidateNationalIDVerification(verification)
-			iv.CheckError(validationErr, fmt.Sprintf("line %d - national id", lineNumber), "")
-		}
+	}
+
+	// 4. Validate IDNo (required, max 8 chars for National ID)
+	iv.Check(instruction.IDNo != "", fmt.Sprintf("line %d - idno", lineNumber), "idno cannot be empty")
+	if instruction.IDNo != "" {
+		iv.CheckError(
+			utils.ValidateStringLength(instruction.IDNo, "idno", maxIDNoLength),
+			fmt.Sprintf("line %d - idno", lineNumber),
+			"",
+		)
 	}
 }
 
@@ -114,13 +101,9 @@ func (iv *DisbursementInstructionsValidator) SanitizeInstruction(instruction *da
 	}
 	sanitizedInstruction.WalletAddressMemo = strings.TrimSpace(instruction.WalletAddressMemo)
 
-	if instruction.ExternalPaymentID != "" {
-		sanitizedInstruction.ExternalPaymentID = strings.TrimSpace(instruction.ExternalPaymentID)
-	}
-
-	sanitizedInstruction.ID = strings.TrimSpace(instruction.ID)
+	sanitizedInstruction.Name = strings.TrimSpace(instruction.Name)
+	sanitizedInstruction.IDNo = strings.TrimSpace(instruction.IDNo)
 	sanitizedInstruction.Amount = strings.TrimSpace(instruction.Amount)
-	sanitizedInstruction.VerificationValue = strings.TrimSpace(instruction.VerificationValue)
 
 	return &sanitizedInstruction
 }
