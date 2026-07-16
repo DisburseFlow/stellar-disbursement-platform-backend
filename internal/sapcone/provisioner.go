@@ -148,3 +148,51 @@ func (s *ProvisionerService) provisionPending(ctx context.Context, wallet *Parti
 		TrustlineCreatedTxHash: trustResult.TrustlineCreatedTxHash,
 	}, nil
 }
+
+// createAccount loads the treasury, checks its balance, builds and submits the
+// CreateAccount transaction. Returns an error result on any failure.
+func (s *ProvisionerService) createAccount(ctx context.Context, wallet *ParticipantWallet, destination string, treasury TreasuryAccountInfo) (ProvisioningResult, error) {
+	log.Ctx(ctx).Debugf("sapcone/provisioner: wallet=%s loading treasury account=%s", wallet.ID, treasury.PublicKey)
+	treasuryAccount, err := s.stellar.LoadAccount(ctx, treasury.PublicKey)
+	if err != nil {
+		log.Ctx(ctx).Errorf("sapcone/provisioner: wallet=%s failed to load treasury account=%s: %v",
+			wallet.ID, treasury.PublicKey, err)
+		s.markFailed(ctx, wallet.ID, ProvisioningFailureReasonAccountCreationFailed)
+		return ProvisioningResult{WalletID: wallet.ID, FailureReason: ProvisioningFailureReasonAccountCreationFailed},
+			fmt.Errorf("loading treasury account: %w", err)
+	}
+
+	if err := s.checkTreasuryBalance(ctx, wallet.ID, treasuryAccount.NativeBalance); err != nil {
+		return ProvisioningResult{WalletID: wallet.ID, FailureReason: ProvisioningFailureReasonInsufficientTreasury}, err
+	}
+
+	log.Ctx(ctx).Infof("sapcone/provisioner: wallet=%s submitting CreateAccount: destination=%s amount=%s treasury=%s",
+		wallet.ID, destination, s.opts.StartingBalance, treasury.PublicKey)
+
+	tx, err := txnbuild.NewTransaction(txnbuild.TransactionParams{
+		SourceAccount:        &txnbuild.SimpleAccount{AccountID: treasury.PublicKey, Sequence: treasuryAccount.SequenceNumber},
+		IncrementSequenceNum: true,
+		Operations: []txnbuild.Operation{
+			&txnbuild.CreateAccount{Destination: destination, Amount: s.opts.StartingBalance},
+		},
+		BaseFee:       txnbuild.MinBaseFee,
+		Preconditions: txnbuild.Preconditions{TimeBounds: txnbuild.NewTimeout(300)},
+	})
+	if err != nil {
+		log.Ctx(ctx).Errorf("sapcone/provisioner: wallet=%s failed to build CreateAccount tx: %v", wallet.ID, err)
+		return ProvisioningResult{}, fmt.Errorf("building CreateAccount transaction: %w", err)
+	}
+
+	result, err := s.stellar.SubmitTransaction(ctx, tx, treasury.Seed)
+	if err != nil || !result.Successful {
+		log.Ctx(ctx).Errorf("sapcone/provisioner: wallet=%s CreateAccount FAILED: successful=%v err=%v",
+			wallet.ID, result.Successful, err)
+		s.markFailed(ctx, wallet.ID, ProvisioningFailureReasonAccountCreationFailed)
+		return ProvisioningResult{WalletID: wallet.ID, FailureReason: ProvisioningFailureReasonAccountCreationFailed},
+			fmt.Errorf("CreateAccount submission failed: %w", err)
+	}
+
+	log.Ctx(ctx).Infof("sapcone/provisioner: wallet=%s CreateAccount SUCCESS txHash=%s newAddress=%s",
+		wallet.ID, result.Hash, destination)
+	return ProvisioningResult{AccountCreatedTxHash: result.Hash}, nil
+}
