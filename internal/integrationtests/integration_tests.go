@@ -345,7 +345,7 @@ func (it *IntegrationTestsService) registerWithInternalSEP(ctx context.Context, 
 		OTP:               data.TestnetAlwaysValidOTP,
 		PhoneNumber:       disbursementInstructions[0].Phone,
 		Email:             disbursementInstructions[0].Email,
-		VerificationValue: disbursementInstructions[0].VerificationValue,
+		VerificationValue: disbursementInstructions[0].IDNo,
 		VerificationField: string(disbursement.VerificationField),
 		ReCAPTCHAToken:    opts.RecaptchaSiteKey,
 	}

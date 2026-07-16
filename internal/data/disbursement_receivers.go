@@ -9,10 +9,12 @@ import (
 )
 
 type DisbursementReceiver struct {
-	ID             string          `json:"id" db:"id"`
-	Email          string          `json:"email,omitempty" db:"email"`
-	PhoneNumber    string          `json:"phone_number" db:"phone_number"`
-	ExternalID     string          `json:"external_id" db:"external_id"`
+	ID          string          `json:"id" db:"id"`
+	Email       string          `json:"email,omitempty" db:"email"`
+	PhoneNumber string          `json:"phone_number" db:"phone_number"`
+	ExternalID  string          `json:"external_id" db:"external_id"`
+	Name        string          `json:"name,omitempty" db:"name"`
+	IDNo        string          `json:"id_no,omitempty" db:"id_no"`
 	ReceiverWallet *ReceiverWallet `json:"receiver_wallet" db:"receiver_wallet"`
 	Payment        *Payment        `json:"payment" db:"payment"`
 	CreatedAt      time.Time       `json:"created_at" db:"created_at"`

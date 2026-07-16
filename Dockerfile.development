@@ -11,9 +11,11 @@ RUN go build -o /bin/stellar-disbursement-platform -ldflags "-X main.GitCommit=$
 # Stage 2: Setup the development environment with Delve for debugging
 FROM golang:1.26-alpine AS development
 
+# Install curl for health checks
+RUN apk add --no-cache curl jq
+
 # set workdir according to repo structure so remote debug source code is in sync
 WORKDIR /app/github.com/stellar/stellar-disbursement-platform
-RUN apk add --no-cache jq
 # Copy the built executable and all source files for debugging
 COPY --from=build /src/stellar-disbursement-platform /app/github.com/stellar/stellar-disbursement-platform
 # Build a debug version of the binary
